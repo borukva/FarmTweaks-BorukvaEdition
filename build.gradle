@@ -86,3 +86,11 @@ publishing {
 		// retrieving dependencies.
 	}
 }
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = 'farmtweaks-test'
+        enableGameTests = true
+        eula = true
+    }
+}

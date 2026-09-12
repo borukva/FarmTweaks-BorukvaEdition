@@ -3,17 +3,19 @@ package powercyphe.farmtweaks.event;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Util;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import powercyphe.farmtweaks.mixin.accessor.LeavesBlockAccessor;
 import powercyphe.farmtweaks.util.FarmTweaksUtil;
 
-import java.util.*;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public class LeafDecayEvent implements ServerTickEvents.EndLevelTick {
     private static final LeafDecayEvent INSTANCE = new LeafDecayEvent();
-    private final List<BlockPos> queue = new ArrayList<>();
+    // Values do not retain their level; unloaded worlds can be collected.
+    private final Map<ServerLevel, LinkedHashSet<BlockPos>> queues = new WeakHashMap<>();
 
     public static LeafDecayEvent get() {
         return INSTANCE;
@@ -21,26 +23,37 @@ public class LeafDecayEvent implements ServerTickEvents.EndLevelTick {
 
     @Override
     public void onEndTick(ServerLevel level) {
-        if (!this.queue.isEmpty()) {
-            int i = 0;
-            while (!this.queue.isEmpty() && i < FarmTweaksUtil.leafDecaySpeed()) {
-                BlockPos blockPos = this.queue.removeFirst();
-                BlockState state = level.getBlockState(blockPos);
+        if (!FarmTweaksUtil.fastLeafDecay()) {
+            this.queues.clear();
+            return;
+        }
+        LinkedHashSet<BlockPos> queue = this.queues.get(level);
+        if (queue == null) {
+            return;
+        }
 
-                if (state.getBlock() instanceof LeavesBlock leaves
-                        && ((LeavesBlockAccessor) leaves).farmtweaks$decaying(state)) {
-                    state.randomTick(level, blockPos, level.getRandom());
-                }
-                i++;
+        int budget = Math.min(queue.size(), FarmTweaksUtil.leafDecaySpeed());
+        for (int i = 0; i < budget; i++) {
+            BlockPos pos = queue.removeFirst();
+            // Never load chunks for decay. Keep pending work until the chunk returns.
+            if (!level.hasChunkAt(pos)) {
+                queue.add(pos);
+                continue;
             }
-
+            BlockState state = level.getBlockState(pos);
+            if (state.getBlock() instanceof LeavesBlock leaves
+                    && ((LeavesBlockAccessor) leaves).farmtweaks$decaying(state)) {
+                state.randomTick(level, pos, level.getRandom());
+            }
+        }
+        if (queue.isEmpty()) {
+            this.queues.remove(level);
         }
     }
 
     public void queue(ServerLevel level, BlockPos blockPos) {
-        if (!this.queue.contains(blockPos)) {
-            this.queue.add(blockPos);
-            Util.shuffle(this.queue, level.getRandom());
+        if (FarmTweaksUtil.fastLeafDecay()) {
+            this.queues.computeIfAbsent(level, ignored -> new LinkedHashSet<>()).add(blockPos.immutable());
         }
     }
 
@@ -52,12 +65,14 @@ public class LeafDecayEvent implements ServerTickEvents.EndLevelTick {
                         continue;
                     }
                     BlockPos adjPos = rootPos.offset(x, y, z);
+                    if (!level.hasChunkAt(adjPos)) {
+                        continue;
+                    }
                     BlockState adjState = level.getBlockState(adjPos);
 
                     if (adjState.getBlock() instanceof LeavesBlock leavesBlock
                             && ((LeavesBlockAccessor) leavesBlock).farmtweaks$decaying(adjState)) {
-                        this.queue(level, new BlockPos(adjPos));
-
+                        this.queue(level, adjPos);
                     }
                 }
             }

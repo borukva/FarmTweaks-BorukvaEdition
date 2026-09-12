@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "farmtweaks-test",
+  "version": "1.0.0",
+  "name": "FarmTweaks regression tests",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": ["powercyphe.farmtweaks.LeafDecayGameTest"]
+  }
+}
