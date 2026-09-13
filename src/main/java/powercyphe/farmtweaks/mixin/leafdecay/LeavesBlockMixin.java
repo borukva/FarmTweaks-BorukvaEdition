@@ -11,7 +11,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import powercyphe.farmtweaks.FarmTweaksConfig;
 import powercyphe.farmtweaks.event.LeafDecayEvent;
 import powercyphe.farmtweaks.util.FarmTweaksUtil;
 
@@ -22,6 +21,14 @@ public abstract class LeavesBlockMixin extends Block {
 
     public LeavesBlockMixin(Properties properties) {
         super(properties);
+    }
+
+    // Distance updates may make leaves eligible after a neighbor's decay scan.
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void farmtweaks$queueUpdatedLeaf(BlockState state, ServerLevel level, BlockPos pos, RandomSource random, CallbackInfo ci) {
+        if (FarmTweaksUtil.fastLeafDecay() && this.decaying(level.getBlockState(pos))) {
+            LeafDecayEvent.get().queue(level, pos);
+        }
     }
 
     @Inject(method = "randomTick", at = @At("HEAD"))
